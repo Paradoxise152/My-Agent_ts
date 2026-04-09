@@ -10,6 +10,12 @@ export interface ToolCall {
     }
 }
 
+interface ChatResult {
+    content: string
+    toolCalls: ToolCall[]
+    reasoningContent: string
+}
+
 export default class ChatOpenAI {
     private llm: OpenAI
     private model:string
@@ -30,7 +36,7 @@ export default class ChatOpenAI {
     }
 
     //异步聊天环节
-    async chat(prompt?:string){
+    async chat(prompt?:string): Promise<ChatResult> {
         logtitle('CHAT');
         if (prompt) this.messages.push({role:'user',content:prompt})//提示词
         const stream = await this.llm.chat.completions.create({
@@ -39,12 +45,22 @@ export default class ChatOpenAI {
             tools:this.getToolsDefinition(),//自定义工具获取
             stream:true,
         })
-        let content=''//用户内容
+        let content=''//最终回复内容
+        let reasoningContent=''//思考内容（如果有）
         let toolCalls:ToolCall[]=[];//工具调用
 
         logtitle('RESPONSE');
         for await (const chunk of stream) {//读流式传输每个chunk
-            const delta=chunk.choices[0].delta
+            // 某些供应商/网关会发送没有 choices 的心跳包，需跳过
+            const choice = chunk.choices?.[0];
+            if (!choice?.delta) continue;
+            const delta = choice.delta;
+            // 处理思考字段（deepseek/gemini 等供应商扩展）
+            const reasoningChunk = (delta as any).reasoning_content;
+            if (typeof reasoningChunk === "string" && reasoningChunk.length > 0) {
+                reasoningContent += reasoningChunk;
+            }
+
             //处理content
             if (delta.content) {
                 const contentChunk=delta.content
@@ -73,11 +89,17 @@ export default class ChatOpenAI {
                 }
             }
         }
+        // 兼容“逆向模型”把思考包裹在 <think>...</think> 中的情况
+        const extracted = this.extractThinkFromContent(content);
+        if (extracted.think) reasoningContent += extracted.think;
+        content = extracted.reply;
+
         //维护messages中assistant的content和tool_calls
         this.messages.push({role:'assistant',content,tool_calls:toolCalls.map(call=>({type:'function',id:call.id,function:call.function}))});
         return {
             content: content,
             toolCalls: toolCalls,
+            reasoningContent,
         };
     }
 
@@ -100,6 +122,21 @@ export default class ChatOpenAI {
                 parameters: tool.inputSchema,
             },
         }));
+    }
+
+    private extractThinkFromContent(raw: string): { think: string; reply: string } {
+        if (!raw) return { think: "", reply: "" };
+        const thinkRegex = /<think>([\s\S]*?)<\/think>/gi;
+        const thinkParts: string[] = [];
+        let match: RegExpExecArray | null = null;
+        while ((match = thinkRegex.exec(raw)) !== null) {
+            if (match[1]) thinkParts.push(match[1].trim());
+        }
+        const reply = raw.replace(thinkRegex, "").trim();
+        return {
+            think: thinkParts.join("\n").trim(),
+            reply,
+        };
     }
 
 

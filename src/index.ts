@@ -18,6 +18,7 @@ function getRequiredEnv(name: string): string {
 
 const URL = 'https://news.ycombinator.com/'
 const outPath = path.join(process.cwd(), 'output');
+fs.mkdirSync(outPath, { recursive: true });
 //任务描述
 const TASK = `
 告诉我Peter的信息,先从我给你的context中找到相关信息,总结后创作一个关于他的简短故事，回答不超过120字。
