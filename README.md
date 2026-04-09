@@ -1,6 +1,6 @@
 # TS + MCP + RAG Agent Demo
 
-这是一个基于 TypeScript + Node.js ESM 的 Agent 示例项目，结合了：
+这是一个基于 TypeScript + Node.js ESM 的 Agent 项目，结合了：
 
 - OpenAI 对话模型（流式输出）
 - MCP 工具调用（网页抓取、文件系统写入）
@@ -82,34 +82,10 @@ npm run start
 
 - `**Missing required environment variable`**  
 检查 `.env` 是否在项目根目录，变量名是否拼写正确。
-- `**Embedding request failed**`  
+- `**Embedding request failed`**  
 检查 `OPENAI_BASE_URL`、`OPENAI_API_KEY`、网络连通性、模型名是否可用。
 - `**knowledge` 目录不存在**  
 在项目根目录手动创建 `knowledge`，并放入至少一个文本文件。
 - **MCP 工具初始化失败**  
 检查 `uvx`/`npx` 是否可执行，相关包能否下载。
-
-## 成本与 Token 估算（参考）
-
-实际消耗取决于：知识库文本长度、TopK、任务复杂度、工具往返次数、模型单价。
-
-粗略估算方法：
-
-- Embedding 输入 token：`knowledge` 文本总 token + 查询 token
-- Chat 输入 token：系统提示 + 上下文（检索结果）+ 历史消息 + 工具结果
-- Chat 输出 token：模型文本回复 + 工具调用参数
-
-一个常见小规模场景（仅示例）：
-
-- 知识库总量约 5k tokens，查询 200 tokens，TopK=3  
-- 一轮任务含 2~4 次工具调用  
-- 可能总计在 **8k ~ 20k tokens**（输入+输出，含 embedding）
-
-计费可按以下方式估算：
-
-1. 到你的模型服务商页面确认所用 chat 模型和 embedding 模型的单价（通常区分 input/output）。
-2. 用 `总费用 = 输入token/1M*输入单价 + 输出token/1M*输出单价 (+ embedding费用)` 计算。
-3. 第一次跑建议记录响应中的 usage（若服务返回）做实测校准。
-
-> 本仓库不绑定特定厂商计费，以上仅为估算区间与计算方法。
 
