@@ -1,6 +1,6 @@
 //根据输入找到数据库中语义最接近的向量
-import { logtitle } from "./utils";
 import VectorStore from "./VectorStore.js";
+import { appendJsonLog, isTerminalMinimal, phaseLine, sectionBanner } from "./diagnosticLog";
 
 export default class EmbeddingRetrievers{
     private vectorStore:VectorStore;
@@ -12,15 +12,17 @@ export default class EmbeddingRetrievers{
     }
 
     async embedDocument(document: string) {
-        logtitle('EMBEDDING DOCUMENT');
+        sectionBanner('EMBEDDING DOCUMENT');
         const embedding = await this.embed(document);
         this.vectorStore.addEmbedding(embedding, document);
+        if (isTerminalMinimal()) phaseLine("embedding.document", "end", `chars=${document.length} dim=${embedding.length}`);
         return embedding;
     }
 
     async embedQuery(query: string) {
-        logtitle('EMBEDDING QUERY');
+        sectionBanner('EMBEDDING QUERY');
         const embedding = await this.embed(query);
+        if (isTerminalMinimal()) phaseLine("embedding.query", "end", `chars=${query.length} dim=${embedding.length}`);
         return embedding;
     }
 
@@ -50,8 +52,16 @@ export default class EmbeddingRetrievers{
         if (!data?.data?.[0]?.embedding) {
             throw new Error("Embedding response format is invalid");
         }
-        console.log(data.data[0].embedding);
-        return data.data[0].embedding;
+        const embedding = data.data[0].embedding as number[];
+        const logVectors = process.env.AGENT_LOG_EMBEDDING_VECTORS === "1";
+        appendJsonLog({
+            type: "embedding.vector",
+            model: this.embeddingModel,
+            dim: embedding.length,
+            preview: embedding.slice(0, 8),
+            ...(logVectors ? { vector: embedding } : {}),
+        });
+        return embedding;
     }
 
     //向量库检索

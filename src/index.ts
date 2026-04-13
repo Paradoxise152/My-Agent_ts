@@ -1,10 +1,9 @@
 import MCPClient from "./MCPClient";
 import Agent from "./Agent";
 import path from "path";
-import EmbeddingRetrievers from "./EmbeddingRetrievers";
 import fs from "fs";
-import { logtitle } from "./utils";
 import dotenv from "dotenv";
+import { retrieveContextForTask } from "./ragContext";
 
 dotenv.config();
 
@@ -16,7 +15,6 @@ function getRequiredEnv(name: string): string {
     return value;
 }
 
-const URL = 'https://news.ycombinator.com/'
 const outPath = path.join(process.cwd(), 'output');
 fs.mkdirSync(outPath, { recursive: true });
 //任务描述
@@ -37,27 +35,15 @@ async function main() {
     const context = await retrieveContext();
 
     // Agent
-    const agent = new Agent([fetchMCP, fileMCP], 'gpt-4o-mini', '', context);
+    const model = process.env.AGENT_MODEL || "gpt-4o-mini";
+    const agent = new Agent([fetchMCP, fileMCP], model, "", context);
     await agent.init();
     await agent.invoke(TASK);
-    await agent.close();
 }
 
 main()
 
 async function retrieveContext() {
-    // RAG
-    const embeddingRetriever = new EmbeddingRetrievers("text-embedding-3-small");//注意修改embedding模型
-    const knowledgeDir = path.join(process.cwd(), 'knowledge');//知识库的路径
-    const files = fs.readdirSync(knowledgeDir);
-    //读文件并嵌入
-    for await (const file of files) {
-        const content = fs.readFileSync(path.join(knowledgeDir, file), 'utf-8');
-        await embeddingRetriever.embedDocument(content);
-    }
-    //检索上下文    
-    const context = (await embeddingRetriever.retrieve(TASK, 3)).join('\n');//top-k保留前3个
-    logtitle('CONTEXT');
-    console.log(context);
-    return context
+    const topK = Number(process.env.RAG_TOP_K || "3") || 3;
+    return retrieveContextForTask(TASK, topK);
 }

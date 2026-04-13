@@ -1,5 +1,6 @@
 import OpenAI from "openai"
 import { Tool } from "@modelcontextprotocol/sdk/types.js"
+import { appendJsonLog, isTerminalMinimal, phaseLine } from "./diagnosticLog"
 import { logtitle } from "./utils"
 
 export interface ToolCall {
@@ -9,6 +10,12 @@ export interface ToolCall {
         arguments:string
     }
 }
+
+export type ChatStreamChunk =
+    | { kind: "content"; text: string }
+    | { kind: "reasoning"; text: string };
+
+export type ChatStreamHandler = (chunk: ChatStreamChunk) => void;
 
 interface ChatResult {
     content: string
@@ -36,8 +43,13 @@ export default class ChatOpenAI {
     }
 
     //异步聊天环节
-    async chat(prompt?:string): Promise<ChatResult> {
-        logtitle('CHAT');
+    async chat(prompt?: string, onStream?: ChatStreamHandler): Promise<ChatResult> {
+        const quiet = Boolean(onStream) || isTerminalMinimal();
+        if (quiet) {
+            phaseLine("llm.chat", "start", prompt ? `promptChars=${prompt.length}` : "continue");
+        } else {
+            logtitle('CHAT');
+        }
         if (prompt) this.messages.push({role:'user',content:prompt})//提示词
         const stream = await this.llm.chat.completions.create({
             model:this.model,
@@ -49,7 +61,8 @@ export default class ChatOpenAI {
         let reasoningContent=''//思考内容（如果有）
         let toolCalls:ToolCall[]=[];//工具调用
 
-        logtitle('RESPONSE');
+        if (!quiet) logtitle('RESPONSE');
+        else phaseLine("llm.stream", "start");
         for await (const chunk of stream) {//读流式传输每个chunk
             // 某些供应商/网关会发送没有 choices 的心跳包，需跳过
             const choice = chunk.choices?.[0];
@@ -59,14 +72,15 @@ export default class ChatOpenAI {
             const reasoningChunk = (delta as any).reasoning_content;
             if (typeof reasoningChunk === "string" && reasoningChunk.length > 0) {
                 reasoningContent += reasoningChunk;
+                onStream?.({ kind: "reasoning", text: reasoningChunk });
             }
 
             //处理content
             if (delta.content) {
                 const contentChunk=delta.content
                 content+=contentChunk
-                //不要console.log(contentChunk) 不要，避免换行
-                process.stdout.write(contentChunk)
+                onStream?.({ kind: "content", text: contentChunk });
+                if (!onStream) process.stdout.write(contentChunk);
             }
             //处理tool_calls
             if (delta.tool_calls) {
@@ -96,6 +110,19 @@ export default class ChatOpenAI {
 
         //维护messages中assistant的content和tool_calls
         this.messages.push({role:'assistant',content,tool_calls:toolCalls.map(call=>({type:'function',id:call.id,function:call.function}))});
+        appendJsonLog({
+            type: "llm.chat.summary",
+            model: this.model,
+            quiet,
+            promptPresent: Boolean(prompt),
+            content,
+            reasoningContent,
+            toolCalls,
+        });
+        if (quiet) {
+            phaseLine("llm.stream", "end", `contentLen=${content.length} toolCalls=${toolCalls.length}`);
+            phaseLine("llm.chat", "end", `reasoningLen=${reasoningContent.length}`);
+        }
         return {
             content: content,
             toolCalls: toolCalls,

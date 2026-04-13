@@ -1,6 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
+import { appendJsonLog, isTerminalMinimal, phaseLine } from "./diagnosticLog";
 
 //构建MCP客户端
 export default class MCPClient {
@@ -9,8 +10,10 @@ export default class MCPClient {
     private args: string[]
     private transport: StdioClientTransport | null = null;
     private tools: Tool[] = [];
+    private readonly label: string;
 
     constructor(name: string, command: string, args: string[], version?: string) {
+        this.label = name;
         this.mcp = new Client({ name, version: version || "0.0.1" });
         this.command = command;
         this.args = args;
@@ -38,6 +41,9 @@ export default class MCPClient {
     //连接MCP服务器
     private async connectToServer() {
         try {
+            if (isTerminalMinimal()) {
+                phaseLine(`mcp.${this.label.replace(/[^\w.-]+/g, "_")}`, "start", "connect");
+            }
             this.transport = new StdioClientTransport({
                 command: this.command,
                 args: this.args,
@@ -52,11 +58,21 @@ export default class MCPClient {
                     inputSchema: tool.inputSchema,
                 };
             });
-            console.log(
-                "Connected to server with tools:",
-                this.tools.map(({ name }) => name)
-            );
+            const toolNames = this.tools.map(({ name }) => name);
+            appendJsonLog({
+                type: "mcp.connected",
+                client: this.label,
+                command: this.command,
+                args: this.args,
+                tools: toolNames,
+            });
+            if (isTerminalMinimal()) {
+                phaseLine(`mcp.${this.label.replace(/[^\w.-]+/g, "_")}`, "end", `tools=${toolNames.join(",")}`);
+            } else {
+                console.log("Connected to server with tools:", toolNames);
+            }
         } catch (e) {
+            appendJsonLog({ type: "mcp.connect_failed", client: this.label, error: String(e) });
             console.log("Failed to connect to MCP server: ", e);
             throw e;
         }
