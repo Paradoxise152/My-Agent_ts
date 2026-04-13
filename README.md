@@ -17,7 +17,7 @@
 - **结构清晰**：`Agent`（编排）、`ChatOpenAI`（LLM 接口）、`MCPClient`（工具客户端）、`EmbeddingRetrievers`（向量检索）。
 - **前后端打通**：`src/server.ts` 暴露 `/api/agent/run`（SSE）与 `/api/health`；`web` 在开发模式下通过 Vite 将 `/api` 代理到本机 Node 服务。
 
-Agent Console 页面截图
+![Agent Console 页面截图](output/页面截图.png)
 
 ## 目录说明
 
